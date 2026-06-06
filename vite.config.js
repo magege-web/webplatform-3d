@@ -7,4 +7,8 @@ import DC from '@dvgis/vite-plugin-dc'
 export default defineConfig({
   base: './',
   plugins: [vue(), eslint(), DC({useCDN:true})],
+  server: {
+    host: '0.0.0.0',
+    port: 8888,
+  },
 })
