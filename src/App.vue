@@ -1,18 +1,15 @@
 <script setup>
 import { onMounted } from 'vue'
 
-function initViewer() {
-  let viewer = new DC.Viewer('viewer-container')
-}
 
 onMounted(() => {
-  DC.ready({}).then(initViewer)
+   
 })
 </script>
 
 <template>
   <div class="container">
-    <div id="viewer-container" class="viewer-container"></div>
+      项目初始化
   </div>
 </template>
 
