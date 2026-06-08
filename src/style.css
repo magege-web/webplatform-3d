@@ -1,21 +1,51 @@
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-   
 }
 
-*{
+* {
   padding: 0;
   margin: 0;
 }
 
-html,body{
+html,
+body {
   width: 100%;
   height: 100%;
   overflow: hidden;
 }
+
 #app {
   width: 100%;
   height: 100%;
   overflow: hidden;
 }
 
+/* ===== 深色主题（默认） ===== */
+[data-theme='dark'] {
+  --theme-panel: rgba(8, 16, 32, 0.88);
+  --theme-panel-border: rgba(0, 240, 255, 0.08);
+  --theme-accent: #00f0ff;
+  --theme-accent-dim: rgba(0, 240, 255, 0.08);
+  --theme-accent-glow: rgba(0, 240, 255, 0.28);
+  --theme-text: #e2e8f0;
+  --theme-text-muted: #64748b;
+  --theme-bg: #0a0f1a;
+  --theme-divider: rgba(255, 255, 255, 0.06);
+
+  color-scheme: dark;
+}
+
+/* ===== 浅色主题 ===== */
+[data-theme='light'] {
+  --theme-panel: rgba(255, 255, 255, 0.92);
+  --theme-panel-border: rgba(0, 120, 160, 0.12);
+  --theme-accent: #0078a0;
+  --theme-accent-dim: rgba(0, 120, 160, 0.06);
+  --theme-accent-glow: rgba(0, 120, 160, 0.18);
+  --theme-text: #1a1a2e;
+  --theme-text-muted: #6b7280;
+  --theme-bg: #f0f4f8;
+  --theme-divider: rgba(0, 0, 0, 0.08);
+
+  color-scheme: light;
+}

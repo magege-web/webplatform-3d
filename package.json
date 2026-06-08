@@ -11,7 +11,8 @@
   "dependencies": {
     "@dvgis/dc-sdk": "^3.2.0",
     "element-plus": "^2.14.1",
-    "vue": "^3.3.4"
+    "vue": "^3.3.4",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@dvgis/vite-plugin-dc": "^2.1.2",
