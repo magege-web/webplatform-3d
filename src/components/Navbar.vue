@@ -25,6 +25,12 @@
 
       <span class="tool-div" aria-hidden="true"></span>
 
+      <button class="tool-btn" :class="{ active: drawActive }" title="标绘" aria-label="标绘工具" @click="$emit('toggle-draw')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      </button>
+
+      <span class="tool-div" aria-hidden="true"></span>
+
       <button class="tool-btn" :title="isFullscreen ? '退出全屏' : '全屏'" :aria-label="isFullscreen ? '退出全屏' : '全屏'" @click="toggleFullscreen">
         <!-- 进入全屏图标 -->
         <svg v-if="!isFullscreen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
@@ -50,6 +56,12 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+
+defineProps({
+  drawActive: { type: Boolean, default: false },
+})
+
+defineEmits(['toggle-draw'])
 
 const THEME_KEY = 'app-theme'
 
