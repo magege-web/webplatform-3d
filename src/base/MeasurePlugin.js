@@ -2,8 +2,8 @@
  * MeasurePlugin — 测量工具插件
  *
  * 基于 DC.Measure 原生 API，提供距离和面积测量。
- * DC.Measure 内部使用 Cesium.CustomDataSource 存储测量结果，
- * 每段距离/面积标签由 DC-SDK 自动渲染。
+ * DC.Measure 内部使用 Cesium.CustomDataSource('measure-layer') 存储结果，
+ * 通过 viewer._delegate.dataSources 访问。
  *
  * 用法：
  *   const measure = new MeasurePlugin()
@@ -27,11 +27,8 @@ class MeasurePlugin {
     this._dataSource = null
     this._activeMode = null
     this._isMeasuring = false
-
-    // 每次测量前的 entity 计数（用于撤销）
     this._countBeforeMeasure = 0
     this._resultCount = 0
-
     this._isMounted = false
     this._isDestroyed = false
   }
@@ -39,7 +36,11 @@ class MeasurePlugin {
   get viewer() { return this._viewer }
   get isMeasuring() { return this._isMeasuring }
   get activeMode() { return this._activeMode }
-  get resultCount() { return this._resultCount }
+  get resultCount() {
+    // 实时从 dataSource 读取，确保准确性
+    this._resultCount = this._countEntities()
+    return this._resultCount
+  }
 
   mount(viewer) {
     if (this._isMounted) return this
@@ -53,13 +54,15 @@ class MeasurePlugin {
         throw new Error('[MeasurePlugin] DC.Measure 不可用')
       }
 
-      // DC.Measure 内部创建 Cesium.CustomDataSource('measure-layer')
-      // 并将其添加到 viewer._delegate.dataSources
       this._measure = new DC.Measure(this._viewer)
 
-      // 通过名称找到内部的 dataSource（用于清空/撤销）
-      this._dataSource = this._findDataSource()
+      // 多路回退查找 dataSource
+      this._dataSource = this._resolveDataSource()
+      if (!this._dataSource) {
+        console.warn('[MeasurePlugin] 无法定位 measure dataSource，撤销/清空将不可用')
+      }
 
+      console.log('[MeasurePlugin] 挂载成功, dataSource:', !!this._dataSource)
       this._isMounted = true
       return this
     } catch (err) {
@@ -78,7 +81,6 @@ class MeasurePlugin {
       return
     }
 
-    // 正在测量中则先停止
     if (this._isMeasuring) {
       this.stop()
     }
@@ -89,58 +91,55 @@ class MeasurePlugin {
       return
     }
 
-    // 记录测量前的实体数量（用于撤销）
-    if (this._dataSource) {
-      this._countBeforeMeasure = this._dataSource.entities.values.length
+    // 确保 dataSource 引用有效
+    if (!this._dataSource) {
+      this._dataSource = this._resolveDataSource()
     }
 
+    this._countBeforeMeasure = this._countEntities()
     this._activeMode = type
     this._isMeasuring = true
     this._options.onStart?.(type)
 
+    console.log(`[MeasurePlugin] 开始测量: ${type}, 当前实体数: ${this._countBeforeMeasure}`)
+
     try {
-      // DC.Measure.distance(options) / DC.Measure.area(options)
       method.call(this._measure, {
         onDrawStop: () => {
+          console.log('[MeasurePlugin] onDrawStop 触发')
           this._activeMode = null
           this._isMeasuring = false
-          this._updateResultCount()
+          this._resultCount = this._countEntities()
+          console.log(`[MeasurePlugin] 测量结束, 实体数: ${this._resultCount}`)
           this._options.onStop?.(null)
         },
       })
     } catch (err) {
+      console.error('[MeasurePlugin] 启动测量异常:', err)
       this._options.onError?.(err)
       this._activeMode = null
       this._isMeasuring = false
     }
   }
 
-  /**
-   * 停止/取消当前测量（丢弃本次测量）
-   */
   stop() {
     if (!this._isMeasuring) return
+    console.log('[MeasurePlugin] 取消当前测量')
 
-    // 回滚：删除本次测量产生的 entities
-    if (this._dataSource && this._countBeforeMeasure >= 0) {
-      const entities = this._dataSource.entities.values
-      while (entities.length > this._countBeforeMeasure) {
-        this._dataSource.entities.remove(entities[entities.length - 1])
-      }
+    if (this._dataSource) {
+      this._rollbackEntities(this._countBeforeMeasure)
     }
 
     this._activeMode = null
     this._isMeasuring = false
     this._countBeforeMeasure = 0
-    this._updateResultCount()
+    this._resultCount = this._countEntities()
     this._options.onStop?.(null)
   }
 
-  /**
-   * 清除所有测量结果
-   */
   clear() {
     this.stop()
+    console.log('[MeasurePlugin] 清空所有测量')
 
     if (this._dataSource) {
       this._dataSource.entities.removeAll()
@@ -150,42 +149,23 @@ class MeasurePlugin {
     this._countBeforeMeasure = 0
   }
 
-  /**
-   * 撤销最后一次测量
-   */
   undo() {
-    if (!this._dataSource || this._resultCount === 0) return
-
-    // 找到最后一次完整测量的实体范围并删除
-    // 由于 DC.Measure 每次测量会产生一组实体（点+线+标签），
-    // 我们不知道确切的范围，采用保守策略：
-    // 撤销 countBeforeLast 到当前之间的实体
-
-    // 简化处理：删除最后一组测量实体
-    // 每组测量大约：点(N) + 折线(1) + 标签(N-1) 个实体
-    // 我们倒序找到最后一组实体的边界
+    if (!this._dataSource) return
     const entities = this._dataSource.entities.values
     if (entities.length === 0) return
 
-    // 从末尾往前找，删除所有属于最后一次测量的实体
-    // 策略：至少删除最后 3 个实体（1个点 + 1条线 + 1个标签是最小测量）
-    const minRemove = 3
-    const toRemove = Math.min(minRemove, entities.length)
+    console.log(`[MeasurePlugin] 撤销, 撤销前实体数: ${entities.length}`)
 
-    for (let i = 0; i < toRemove; i++) {
-      this._dataSource.entities.remove(entities[entities.length - 1 - i])
-    }
-
-    this._updateResultCount()
+    // 回滚到上次测量前的状态
+    this._rollbackEntities(this._countBeforeMeasure)
     this._countBeforeMeasure = 0
+    this._resultCount = this._countEntities()
+
+    console.log(`[MeasurePlugin] 撤销后实体数: ${this._resultCount}`)
   }
 
-  /**
-   * 获取当前测量的实体数量
-   */
   get entityCount() {
-    if (!this._dataSource) return 0
-    return this._dataSource.entities.values.length
+    return this._countEntities()
   }
 
   unmount() {
@@ -204,30 +184,63 @@ class MeasurePlugin {
 
   // ---- 内部 ----
 
-  /**
-   * 从 viewer.dataSources 中查找 DC.Measure 创建的 dataSource
-   * DC.Measure 构造函数中: new Cesium.CustomDataSource('measure-layer')
-   */
-  _findDataSource() {
-    const dsList = this._viewer?._delegate?.dataSources
-    if (!dsList) return null
+  /** 多路回退定位 dataSource */
+  _resolveDataSource() {
+    // 方法1：从 measure 实例的 getter 获取
+    const fromGetter = this._measure?.customDataSource
+      || this._measure?._customDataSource
+      || this._measure?.dataSource
+      || this._measure?._dataSource
+    if (fromGetter && typeof fromGetter.entities?.removeAll === 'function') {
+      console.log('[MeasurePlugin] 通过 getter 找到 dataSource')
+      return fromGetter
+    }
 
-    // 从末尾查找（最新添加的）
-    for (let i = dsList.length - 1; i >= 0; i--) {
-      const ds = dsList.get(i)
-      if (ds && ds.name === 'measure-layer') {
-        return ds
+    // 方法2：从 viewer.dataSources 按名称查找
+    const dsList = this._viewer?._delegate?.dataSources
+    if (dsList) {
+      for (let i = dsList.length - 1; i >= 0; i--) {
+        const ds = dsList.get(i)
+        if (ds && ds.name === 'measure-layer') {
+          console.log('[MeasurePlugin] 通过名称找到 dataSource')
+          return ds
+        }
       }
     }
+
+    // 方法3：遍历 dataSources 找到最新添加的非图层 dataSource
+    // DC.Measure 的 dataSource 不含 imageryLayers
+    if (dsList) {
+      for (let i = dsList.length - 1; i >= 0; i--) {
+        const ds = dsList.get(i)
+        // Cesium.CustomDataSource 通常 name 不为空
+        if (ds && !ds.name?.startsWith('dc-') && ds.entities) {
+          console.log(`[MeasurePlugin] 通过遍历找到 dataSource: "${ds.name}"`)
+          return ds
+        }
+      }
+    }
+
     return null
   }
 
-  _updateResultCount() {
-    if (!this._dataSource) {
-      this._resultCount = 0
-      return
+  /** 获取当前 dataSource 中的实体数量 */
+  _countEntities() {
+    if (!this._dataSource) return 0
+    try {
+      return this._dataSource.entities.values.length
+    } catch (e) {
+      return 0
     }
-    this._resultCount = this._dataSource.entities.values.length
+  }
+
+  /** 回滚实体到指定数量 */
+  _rollbackEntities(targetCount) {
+    if (!this._dataSource) return
+    const entities = this._dataSource.entities.values
+    while (entities.length > targetCount) {
+      this._dataSource.entities.remove(entities[entities.length - 1])
+    }
   }
 }
 
