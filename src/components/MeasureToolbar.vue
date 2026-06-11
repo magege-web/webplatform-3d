@@ -27,17 +27,17 @@
     <div class="toolbar-group">
       <button
         v-if="measureState.isMeasuring"
-        class="toolbar-btn toolbar-btn--danger"
-        title="取消当前测量"
-        aria-label="取消当前测量"
+        class="toolbar-btn"
+        title="完成测量"
+        aria-label="完成测量"
         @click="handleCancel"
       >
         <span class="toolbar-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="16" height="16">
-            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <polyline points="20 6 9 17 4 12"/>
           </svg>
         </span>
-        <span class="toolbar-label">取消</span>
+        <span class="toolbar-label">完成</span>
       </button>
 
       <button
@@ -119,12 +119,8 @@ function handleMeasure(type) {
   const plugin = getPlugin()
   if (!plugin) return
 
-  // 已激活同类型 → 取消
-  if (plugin.activeMode === type && plugin.isMeasuring) {
-    plugin.stop()
-    return
-  }
-
+  // 已激活同类型 → 点击即开始新一轮测量（DC.Measure 无回调，每轮需重新调用）
+  // 用户通过「取消」按钮或切换模式来停止
   plugin.start(type)
 }
 
