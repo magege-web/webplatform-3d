@@ -10,3 +10,4 @@
 
 export { default as GlobePlugin } from './GlobePlugin.js'
 export { default as DrawPlugin } from './DrawPlugin.js'
+export { default as MeasurePlugin } from './MeasurePlugin.js'

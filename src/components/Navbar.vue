@@ -29,6 +29,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
       </button>
 
+      <button class="tool-btn" :class="{ active: measureActive }" title="测量" aria-label="测量工具" @click="$emit('toggle-measure')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><path d="M2 22l2-2"/><path d="M7 17l-2 2"/><path d="M7 17l5-5"/><path d="M17 7l-5 5"/><path d="M17 7l2-2"/><path d="M22 2l-2 2"/><line x1="7" y1="17" x2="3" y2="21"/><line x1="17" y1="7" x2="21" y2="3"/></svg>
+      </button>
+
       <span class="tool-div" aria-hidden="true"></span>
 
       <button class="tool-btn" :title="isFullscreen ? '退出全屏' : '全屏'" :aria-label="isFullscreen ? '退出全屏' : '全屏'" @click="toggleFullscreen">
@@ -59,9 +63,10 @@ import { ref, onMounted, onUnmounted } from 'vue'
 
 defineProps({
   drawActive: { type: Boolean, default: false },
+  measureActive: { type: Boolean, default: false },
 })
 
-defineEmits(['toggle-draw'])
+defineEmits(['toggle-draw', 'toggle-measure'])
 
 const THEME_KEY = 'app-theme'
 

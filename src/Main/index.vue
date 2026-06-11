@@ -1,13 +1,26 @@
 <template>
-  <Navbar :draw-active="drawToolbarVisible" @toggle-draw="toggleDrawToolbar" />
+  <Navbar
+    :draw-active="drawToolbarVisible"
+    :measure-active="measureToolbarVisible"
+    @toggle-draw="toggleDrawToolbar"
+    @toggle-measure="toggleMeasureToolbar"
+  />
   <main class="main-content">
     <div id="globe-viewer" ref="globeContainer" class="globe-container"></div>
+    <!-- 标绘工具栏 -->
     <DrawToolbar
       :draw-plugin="drawPlugin"
       :draw-state="drawState"
       :visible="drawToolbarVisible"
-      @clear="onCleared"
+      @clear="onDrawCleared"
       @export="onExport"
+    />
+    <!-- 测量工具栏 -->
+    <MeasureToolbar
+      :measure-plugin="measurePlugin"
+      :measure-state="measureState"
+      :visible="measureToolbarVisible"
+      @clear="onMeasureCleared"
     />
   </main>
 </template>
@@ -16,36 +29,44 @@
 import { ref, onMounted, onUnmounted, shallowRef, reactive, markRaw } from 'vue'
 import Navbar from '@/components/Navbar.vue'
 import DrawToolbar from '@/components/DrawToolbar.vue'
-import { GlobePlugin, DrawPlugin } from '@/base'
+import MeasureToolbar from '@/components/MeasureToolbar.vue'
+import { GlobePlugin, DrawPlugin, MeasurePlugin } from '@/base'
 
 const globeContainer = ref(null)
 const drawToolbarVisible = ref(false)
+const measureToolbarVisible = ref(false)
 
 /** @type {GlobePlugin | null} */
 let globe = null
 
-/** 使用 shallowRef 避免 Vue Proxy 包裹 DC-SDK 内部对象 */
-const drawPlugin = shallowRef(null)
+// ---- 标绘 ----
 
-/** @type {DrawPlugin | null} */
+const drawPlugin = shallowRef(null)
 let drawPluginInstance = null
 
-/** 独立的响应式状态，供工具栏 UI 绑定 */
 const drawState = reactive({
   currentType: null,
   isDrawing: false,
   featureCount: 0,
 })
 
+// ---- 测量 ----
+
+const measurePlugin = shallowRef(null)
+let measurePluginInstance = null
+
+const measureState = reactive({
+  activeMode: null,
+  isMeasuring: false,
+  resultCount: 0,
+})
+
+// ---- 初始化 ----
+
 onMounted(async () => {
   globe = new GlobePlugin({
-    // 场景模式：3=3D | 2=2D | 2.5=2.5D
     sceneMode: 3,
-
-    // 默认底图瓦片（高德地图，国内可用）
     baseLayer: { type: 'amap', style: 'img', crs: 'WGS84' },
-
-    // 初始视角 — 中国北京
     homeView: {
       longitude: 116.39,
       latitude: 39.91,
@@ -54,8 +75,8 @@ onMounted(async () => {
 
     onCreated: () => {
       console.log('[Main] 地球渲染完成')
-      // 地球就绪后初始化标绘插件
       initDrawPlugin()
+      initMeasurePlugin()
     },
     onError: (err) => {
       console.error('[Main] 地球渲染失败:', err)
@@ -64,6 +85,8 @@ onMounted(async () => {
 
   await globe.mount(globeContainer.value)
 })
+
+// ---- 标绘初始化 ----
 
 function syncDrawState() {
   if (!drawPluginInstance) return
@@ -87,7 +110,6 @@ function initDrawPlugin() {
       },
     })
     drawPluginInstance.mount(globe.viewer)
-    // markRaw 防止 DrawPlugin 实例（含 DC-SDK 内部对象）被 Vue Proxy 包裹
     drawPlugin.value = markRaw(drawPluginInstance)
     console.log('[Main] 标绘插件初始化成功')
   } catch (err) {
@@ -95,13 +117,58 @@ function initDrawPlugin() {
   }
 }
 
-function toggleDrawToolbar() {
-  drawToolbarVisible.value = !drawToolbarVisible.value
+// ---- 测量初始化 ----
+
+function syncMeasureState() {
+  if (!measurePluginInstance) return
+  measureState.activeMode = measurePluginInstance.activeMode
+  measureState.isMeasuring = measurePluginInstance.isMeasuring
+  measureState.resultCount = measurePluginInstance.resultCount
 }
 
-function onCleared() {
+function initMeasurePlugin() {
+  try {
+    measurePluginInstance = new MeasurePlugin({
+      onStart: () => { syncMeasureState() },
+      onStop: () => { syncMeasureState() },
+      onError: (err) => {
+        console.error('[Main] 测量错误:', err)
+      },
+    })
+    measurePluginInstance.mount(globe.viewer)
+    measurePlugin.value = markRaw(measurePluginInstance)
+    console.log('[Main] 测量插件初始化成功')
+  } catch (err) {
+    console.warn('[Main] 测量插件初始化失败:', err.message)
+  }
+}
+
+// ---- 工具栏切换（互斥） ----
+
+function toggleDrawToolbar() {
+  drawToolbarVisible.value = !drawToolbarVisible.value
+  if (drawToolbarVisible.value) {
+    measureToolbarVisible.value = false
+  }
+}
+
+function toggleMeasureToolbar() {
+  measureToolbarVisible.value = !measureToolbarVisible.value
+  if (measureToolbarVisible.value) {
+    drawToolbarVisible.value = false
+  }
+}
+
+// ---- 事件处理 ----
+
+function onDrawCleared() {
   console.log('[Main] 已清除所有标绘')
   syncDrawState()
+}
+
+function onMeasureCleared() {
+  console.log('[Main] 已清除所有测量')
+  syncMeasureState()
 }
 
 function onExport({ features }) {
@@ -115,7 +182,10 @@ function onExport({ features }) {
   URL.revokeObjectURL(url)
 }
 
+// ---- 清理 ----
+
 onUnmounted(() => {
+  measurePluginInstance?.unmount()
   drawPluginInstance?.unmount()
   globe?.unmount()
 })
