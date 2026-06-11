@@ -186,13 +186,38 @@ class MeasurePlugin {
   // ---- 内部 ----
 
   _resolveDataSource() {
-    // 方法1：从 measure 实例 getter 获取
-    const fromGetter = this._measure?.customDataSource
-      || this._measure?._customDataSource
-      || this._measure?.dataSource
-      || this._measure?._dataSource
-    if (fromGetter && typeof fromGetter.entities?.removeAll === 'function') {
-      return fromGetter
+    // 方法1：枚举 measure 实例的所有属性，找到 DataSource
+    if (this._measure) {
+      // 遍历实例自身属性 + 原型链
+      const seen = new Set()
+      let obj = this._measure
+      while (obj && obj !== Object.prototype) {
+        for (const key of Object.keys(obj)) {
+          if (seen.has(key)) continue
+          seen.add(key)
+          try {
+            const val = obj[key]
+            if (val && typeof val === 'object' && typeof val.entities?.removeAll === 'function') {
+              console.log(`[MeasurePlugin] 通过属性 "${key}" 找到 dataSource`)
+              return val
+            }
+          } catch (e) { /* skip getter errors */ }
+        }
+        // 也检查原型上的 getter
+        const descs = Object.getOwnPropertyDescriptors(obj)
+        for (const [key, desc] of Object.entries(descs)) {
+          if (seen.has(key) || !desc.get) continue
+          seen.add(key)
+          try {
+            const val = desc.get.call(this._measure)
+            if (val && typeof val === 'object' && typeof val.entities?.removeAll === 'function') {
+              console.log(`[MeasurePlugin] 通过 getter "${key}" 找到 dataSource`)
+              return val
+            }
+          } catch (e) { /* skip */ }
+        }
+        obj = Object.getPrototypeOf(obj)
+      }
     }
 
     // 方法2：从 viewer.dataSources 按名称查找
@@ -200,10 +225,25 @@ class MeasurePlugin {
     if (dsList) {
       for (let i = dsList.length - 1; i >= 0; i--) {
         const ds = dsList.get(i)
-        if (ds?.name === 'measure-layer') return ds
+        if (ds?.name === 'measure-layer') {
+          console.log('[MeasurePlugin] 通过 viewer.dataSources 名称找到')
+          return ds
+        }
       }
     }
 
+    // 方法3：遍历 viewer.dataSources，找名字含 measure 的
+    if (dsList) {
+      for (let i = 0; i < dsList.length; i++) {
+        const ds = dsList.get(i)
+        if (ds?.name?.includes('measure')) {
+          console.log(`[MeasurePlugin] 通过模糊匹配 "${ds.name}" 找到`)
+          return ds
+        }
+      }
+    }
+
+    console.warn('[MeasurePlugin] 所有方法均未找到 dataSource')
     return null
   }
 
