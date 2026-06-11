@@ -1,15 +1,12 @@
 /**
  * MeasurePlugin — 测量工具插件
  *
- * 基于 DC.Measure 原生 API，DC-SDK 全自动处理：
- * - 鼠标交互（左键加点、右键完成）
- * - 每段距离/面积标签渲染
- * - 结果存储在 Cesium.CustomDataSource('measure-layer')
+ * 基于 DC.Measure 原生 API，DC-SDK 全自动处理鼠标交互和结果存储。
  *
  * 用法：
  *   const measure = new MeasurePlugin()
  *   measure.mount(viewer)
- *   measure.start('distance')   // 仅激活模式，不传 options
+ *   measure.start('distance')
  *   measure.clear()
  *   measure.unmount()
  */
@@ -53,7 +50,7 @@ class MeasurePlugin {
       this._dataSource = this._resolveDataSource()
 
       if (this._dataSource) {
-        console.log('[MeasurePlugin] 挂载成功, dataSource 已定位')
+        console.log('[MeasurePlugin] 挂载成功')
       } else {
         console.warn('[MeasurePlugin] dataSource 未定位，将在首次测量时重试')
       }
@@ -67,7 +64,7 @@ class MeasurePlugin {
   }
 
   /**
-   * 开始测量 — 直接调用 DC.Measure.distance()/area()，不传 options
+   * 开始测量
    */
   start(type) {
     if (!this._isMounted || !this._measure) {
@@ -81,18 +78,14 @@ class MeasurePlugin {
       return
     }
 
-    // 确保 dataSource 引用
     if (!this._dataSource) {
       this._dataSource = this._resolveDataSource()
     }
 
     this._activeMode = type
     this._options.onStart?.(type)
-    console.log(`[MeasurePlugin] 激活: ${type}`)
 
     try {
-      // DC.Measure.distance() / DC.Measure.area() — 无参数调用
-      // DC-SDK 全自动处理鼠标交互和标签渲染
       method.call(this._measure)
     } catch (err) {
       console.error('[MeasurePlugin] 启动异常:', err)
@@ -101,54 +94,81 @@ class MeasurePlugin {
     }
   }
 
-  /**
-   * 结束当前测量（用户右键后点击按钮取消激活，此时更新 UI 状态）
-   */
   stop() {
     if (!this._activeMode) return
     this._activeMode = null
     this._options.onStop?.(null)
-    console.log(`[MeasurePlugin] 停止测量, 实体数: ${this._countEntities()}`)
   }
 
+  /**
+   * 清空所有测量 — 多路清空确保彻底
+   */
   clear() {
     this._activeMode = null
-    console.log('[MeasurePlugin] 清空所有测量')
 
+    // 1. 清空已找到的 dataSource
     if (this._dataSource) {
       this._dataSource.entities.removeAll()
     }
+
+    // 2. 重新查找一次，防止 dataSource 引用失效
+    const ds = this._resolveDataSource()
+    if (ds && ds !== this._dataSource) {
+      ds.entities.removeAll()
+      this._dataSource = ds
+    }
+
+    // 3. 遍历 viewer 所有 dataSources，清空名为 measure-layer 的
+    const dsList = this._viewer?._delegate?.dataSources
+    if (dsList) {
+      for (let i = dsList.length - 1; i >= 0; i--) {
+        const item = dsList.get(i)
+        if (item?.name === 'measure-layer') {
+          item.entities.removeAll()
+        }
+      }
+    }
+
+    // 4. 通过 measure getter 尝试清空
+    const altDS = this._measure?.customDataSource
+      || this._measure?._customDataSource
+    if (altDS && altDS !== this._dataSource) {
+      altDS.entities.removeAll()
+    }
+
+    console.log('[MeasurePlugin] 已清空所有测量')
   }
 
   undo() {
+    // 确保 dataSource 是最新的
+    if (!this._dataSource) {
+      this._dataSource = this._resolveDataSource()
+    }
     if (!this._dataSource) return
 
     const entities = this._dataSource.entities.values
     if (entities.length === 0) return
 
-    console.log(`[MeasurePlugin] 撤销, 撤销前实体数: ${entities.length}`)
-
-    // 一组完整测量的实体：N个点 + 1条线/面 + (N-1)个标签
-    // 倒序找：从末尾往前找 polyline/polygon 实体作为边界
-    let batchStart = entities.length - 1
-    let foundPrimitive = false
-
+    // 完整测量结构：N个点 + 1条polyline + 多个标签
+    // 从末尾倒序找到 polyline 实体作为一组测量的边界
+    let batchStart = -1
     for (let i = entities.length - 1; i >= 0; i--) {
-      const e = entities[i]
-      if (e.polyline || e.polygon) {
-        // 这是线段/面 — 从这里往前到上一个线段/面之间是一组
-        if (foundPrimitive) break
-        foundPrimitive = true
+      if (entities[i].polyline || entities[i].polygon) {
         batchStart = i
+        break
       }
+    }
+
+    if (batchStart < 0) {
+      // 没找到 polyline/polygon，删除所有
+      this._dataSource.entities.removeAll()
+      return
     }
 
     // 删除从 batchStart 到末尾的所有实体
     while (entities.length > batchStart) {
       this._dataSource.entities.remove(entities[entities.length - 1])
     }
-
-    console.log(`[MeasurePlugin] 撤销后实体数: ${this._countEntities()}`)
   }
 
   unmount() {
@@ -166,7 +186,7 @@ class MeasurePlugin {
   // ---- 内部 ----
 
   _resolveDataSource() {
-    // 方法1：从 measure 实例获取
+    // 方法1：从 measure 实例 getter 获取
     const fromGetter = this._measure?.customDataSource
       || this._measure?._customDataSource
       || this._measure?.dataSource
@@ -187,13 +207,40 @@ class MeasurePlugin {
     return null
   }
 
-  _countEntities() {
-    if (!this._dataSource) return 0
-    try {
-      return this._dataSource.entities.values.length
-    } catch (e) {
-      return 0
+  /**
+   * 调试：打印 dataSource 中所有实体类型，用于排查分段标签
+   */
+  debugEntities() {
+    const ds = this._dataSource || this._resolveDataSource()
+    if (!ds) {
+      console.log('[MeasurePlugin] dataSource 未找到')
+      return
     }
+    const entities = ds.entities.values
+    console.log(`[MeasurePlugin] dataSource 共 ${entities.length} 个实体:`)
+    entities.forEach((e, i) => {
+      const types = []
+      if (e.point) types.push('point')
+      if (e.polyline) types.push('polyline')
+      if (e.polygon) types.push('polygon')
+      if (e.label) types.push(`label("${e.label?.text?.getValue?.() || e.label?.text || ''}")`)
+      if (e.billboard) types.push('billboard')
+      console.log(`  [${i}] ${types.join(', ') || 'unknown'}`, e)
+    })
+  }
+
+  _countEntities() {
+    // 实时从 dataSource 读取
+    if (this._dataSource) {
+      try { return this._dataSource.entities.values.length } catch (e) { /* */ }
+    }
+    // 回退查找
+    const ds = this._resolveDataSource()
+    if (ds) {
+      this._dataSource = ds
+      try { return ds.entities.values.length } catch (e) { /* */ }
+    }
+    return 0
   }
 }
 
