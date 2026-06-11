@@ -18,7 +18,6 @@
     <!-- 测量工具栏 -->
     <MeasureToolbar
       :measure-plugin="measurePlugin"
-      :measure-state="measureState"
       :visible="measureToolbarVisible"
       @clear="onMeasureCleared"
     />
@@ -54,12 +53,6 @@ const drawState = reactive({
 
 const measurePlugin = shallowRef(null)
 let measurePluginInstance = null
-
-const measureState = reactive({
-  activeMode: null,
-  isMeasuring: false,
-  resultCount: 0,
-})
 
 // ---- 初始化 ----
 
@@ -119,18 +112,9 @@ function initDrawPlugin() {
 
 // ---- 测量初始化 ----
 
-function syncMeasureState() {
-  if (!measurePluginInstance) return
-  measureState.activeMode = measurePluginInstance.activeMode
-  measureState.isMeasuring = measurePluginInstance.isMeasuring
-  measureState.resultCount = measurePluginInstance.resultCount
-}
-
 function initMeasurePlugin() {
   try {
     measurePluginInstance = new MeasurePlugin({
-      onStart: () => { syncMeasureState() },
-      onStop: () => { syncMeasureState() },
       onError: (err) => {
         console.error('[Main] 测量错误:', err)
       },
@@ -168,7 +152,6 @@ function onDrawCleared() {
 
 function onMeasureCleared() {
   console.log('[Main] 已清除所有测量')
-  syncMeasureState()
 }
 
 function onExport({ features }) {

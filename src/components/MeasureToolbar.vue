@@ -11,10 +11,9 @@
         v-for="mode in modes"
         :key="mode.type"
         class="toolbar-btn"
-        :class="{ active: measureState.activeMode === mode.type }"
-        :title="mode.label + (mode.hint ? ` — ${mode.hint}` : '')"
+        :class="{ active: activeMode === mode.type }"
+        :title="mode.label + (mode.hint ? ' — ' + mode.hint : '')"
         :aria-label="mode.label"
-        :aria-pressed="measureState.activeMode === mode.type"
         @click="handleMeasure(mode.type)"
       >
         <span class="toolbar-icon" v-html="mode.icon"></span>
@@ -26,25 +25,10 @@
 
     <div class="toolbar-group">
       <button
-        v-if="measureState.isMeasuring"
-        class="toolbar-btn"
-        title="完成测量"
-        aria-label="完成测量"
-        @click="handleCancel"
-      >
-        <span class="toolbar-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-        </span>
-        <span class="toolbar-label">完成</span>
-      </button>
-
-      <button
         class="toolbar-btn"
         title="撤销上一次测量"
         aria-label="撤销上一次测量"
-        :disabled="measureState.resultCount === 0"
+        :disabled="entityCount === 0"
         @click="handleUndo"
       >
         <span class="toolbar-icon">
@@ -59,7 +43,7 @@
         class="toolbar-btn"
         title="清空所有测量"
         aria-label="清空所有测量"
-        :disabled="measureState.resultCount === 0"
+        :disabled="entityCount === 0"
         @click="handleClear"
       >
         <span class="toolbar-icon">
@@ -71,30 +55,46 @@
       </button>
     </div>
 
-    <div class="toolbar-count" v-if="measureState.resultCount > 0">
-      共 {{ measureState.resultCount }} 次测量
+    <div class="toolbar-count" v-if="entityCount > 0">
+      共 {{ entityCount }} 个实体
     </div>
   </div>
 </template>
 
 <script setup>
+import { ref, watch, onMounted, onUnmounted } from 'vue'
+
 const props = defineProps({
-  /** MeasurePlugin 实例（shallowRef，仅用于方法调用） */
   measurePlugin: { type: Object, default: null },
-  /** 响应式测量状态 */
-  measureState: {
-    type: Object,
-    default: () => ({
-      activeMode: null,
-      isMeasuring: false,
-      resultCount: 0,
-    }),
-  },
-  /** 工具栏显隐 */
   visible: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['clear'])
+
+/** 轮询：实时读取 entity 数量 */
+const entityCount = ref(0)
+const activeMode = ref(null)
+let _timer = null
+
+onMounted(() => {
+  _timer = setInterval(() => {
+    const p = props.measurePlugin
+    entityCount.value = p?.resultCount || 0
+    activeMode.value = p?.activeMode || null
+  }, 300)
+})
+
+onUnmounted(() => {
+  clearInterval(_timer)
+})
+
+// 切换 visible 时立即刷新
+watch(() => props.visible, (v) => {
+  if (v && props.measurePlugin) {
+    entityCount.value = props.measurePlugin.resultCount || 0
+    activeMode.value = props.measurePlugin.activeMode || null
+  }
+})
 
 const modes = [
   {
@@ -116,16 +116,8 @@ function getPlugin() {
 }
 
 function handleMeasure(type) {
-  const plugin = getPlugin()
-  if (!plugin) return
-
-  // 已激活同类型 → 点击即开始新一轮测量（DC.Measure 无回调，每轮需重新调用）
-  // 用户通过「取消」按钮或切换模式来停止
-  plugin.start(type)
-}
-
-function handleCancel() {
-  getPlugin()?.stop()
+  // 每次点击都启动新的测量，不 toggle
+  getPlugin()?.start(type)
 }
 
 function handleUndo() {
@@ -133,11 +125,10 @@ function handleUndo() {
 }
 
 function handleClear() {
-  const plugin = getPlugin()
-  if (!plugin) return
-  if (plugin.resultCount === 0) return
-
-  plugin.clear()
+  const p = getPlugin()
+  if (!p) return
+  p.clear()
+  entityCount.value = 0
   emit('clear')
 }
 </script>
@@ -223,12 +214,6 @@ function handleClear() {
 .toolbar-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
-}
-
-.toolbar-btn--danger:hover:not(:disabled) {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.2);
 }
 
 .toolbar-icon {
