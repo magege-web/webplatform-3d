@@ -7,6 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 1. 项目概览
 
 基于 **Vue 3 + Vite + DC-SDK** 的 3D GIS/地图可视化应用脚手架。DC-SDK（来自 DVGis）提供基于 Cesium 的 3D 地球和 2D 地图能力。
+* 重点：所有功能的实现必须是使用dc-sdk中的插件
+* 参考文档：
+- 功能案例： https://dc.dvgis.cn/#/examples 
+- DC-SDK 开发文档： https://resource.dvgis.cn/dc-api/v2.x/zh/base/#dc-transform
+- public下的 dc.min.js 为dc-sdk中的实现过程；
 
 ## 2. 技术栈
 

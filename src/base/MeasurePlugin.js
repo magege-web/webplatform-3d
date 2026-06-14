@@ -135,7 +135,7 @@ class MeasurePlugin {
     if (altDS && altDS !== this._dataSource) {
       altDS.entities.removeAll()
     }
-
+    this._measure?.deactivate();
     console.log('[MeasurePlugin] 已清空所有测量')
   }
 
